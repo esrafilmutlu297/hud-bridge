@@ -62,6 +62,9 @@ class MainActivity : Activity() {
         root.addView(button("4) Pil kısıtlamasını kaldır") {
             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         })
+        root.addView(button("5) Konum ve bildirim izni ver (hız için)") { askLocation() })
+        root.addView(button("Hızı başlat (telefon GPS)") { startHud() })
+        root.addView(button("Hızı durdur") { stopService(Intent(this, HudService::class.java)); AppLog.add("Hız servisi durduruldu") })
         root.addView(button("HUD'a bağlan") { HudBle.connect(applicationContext) })
         root.addView(button("Bağlantıyı kes") { HudBle.disconnect() })
         root.addView(button("Test: hız 87") { HudBle.sendNow("HIZ:87") })
@@ -104,6 +107,23 @@ class MainActivity : Activity() {
             "Ok şablonu sayısı: ${ArrowMatcher.templateCount()}"
         logView.text = AppLog.text()
         scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
+    }
+
+    private fun askLocation() {
+        val perms = ArrayList<String>()
+        perms.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        perms.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+        if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+        requestPermissions(perms.toTypedArray(), 2)
+    }
+
+    private fun startHud() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            AppLog.add("Önce 5) konum izni ver")
+            return
+        }
+        startForegroundService(Intent(this, HudService::class.java))
+        AppLog.add("Hız servisi başlatıldı")
     }
 
     private fun askBluetooth() {

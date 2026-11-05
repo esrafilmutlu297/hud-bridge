@@ -13,7 +13,7 @@ import java.security.MessageDigest
  */
 object ArrowMatcher {
     private const val N = 24
-    private const val MAX_DIFF = 0.14
+    private const val MAX_DIFF = 0.08
 
     private class Tpl(val label: String, val mask: BooleanArray)
 

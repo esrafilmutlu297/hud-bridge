@@ -49,7 +49,8 @@ class NavListener : NotificationListenerService() {
         var label: String? = null
         var diff = 1.0
         var note = ""
-        val icons = listOf("big" to n.getLargeIcon(), "small" to n.smallIcon)
+        // Küçük resim her zaman aynı genel "navigasyon" simgesi; sadece büyük resim dönüş okudur
+        val icons = listOf("big" to n.getLargeIcon())
         for ((kind, icon) in icons) {
             if (icon == null) continue
             val d = icon.loadDrawable(applicationContext) ?: continue

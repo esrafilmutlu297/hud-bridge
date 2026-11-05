@@ -71,13 +71,24 @@ class NavListener : NotificationListenerService() {
             AppLog.add("Maps: '$title' / '$text' / ok=${label ?: "?"}$note")
         }
 
-        val m = distRe.find(title)
-        if (m != null) {
-            val num = m.groupValues[1]
-            val unit = m.groupValues[2].lowercase()
-            HudBle.setState("MESAFE", "MESAFE:$num$unit")
+        // Mesafeyi metreye çevir; dönüş uzaksa düz ok göster, yaklaşınca asıl dönüş okunu
+        val dm = distRe.find(title)
+        var meters = 0.0
+        if (dm != null) {
+            val num = dm.groupValues[1].replace(',', '.').toDoubleOrNull() ?: 0.0
+            val unit = dm.groupValues[2].lowercase()
+            meters = when (unit) {
+                "km" -> num * 1000.0
+                "ft" -> num * 0.3048
+                "mi" -> num * 1609.344
+                "yd" -> num * 0.9144
+                else -> num
+            }
+            HudBle.setState("MESAFE", "MESAFE:${dm.groupValues[1]}$unit")
         }
-        if (label != null) {
+        if (meters > FAR_METERS) {
+            HudBle.setState("YON", "YON:DUZ")
+        } else if (label != null) {
             HudBle.setState("YON", "YON:$label")
         }
     }
@@ -110,5 +121,7 @@ class NavListener : NotificationListenerService() {
 
     companion object {
         const val MAPS = "com.google.android.apps.maps"
+        /** Dönüşe bu mesafeden uzaksa HUD'da düz ok gösterilir (metre). */
+        const val FAR_METERS = 1000.0
     }
 }

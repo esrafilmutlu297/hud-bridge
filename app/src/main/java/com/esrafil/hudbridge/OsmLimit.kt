@@ -20,8 +20,14 @@ object OsmLimit {
     @Volatile private var hasCache = false
     private var cLat = 0.0
     private var cLon = 0.0
-    private const val RADIUS = 1000
-    private const val REFETCH_M = 400.0
+    private const val RADIUS = 600
+    private const val REFETCH_M = 250.0
+    private val SERVERS = listOf(
+        "https://overpass-api.de/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.private.coffee/api/interpreter"
+    )
+    @Volatile private var failUntil = 0L
     private val busy = AtomicBoolean(false)
 
     /** Arka planda çalışır; sonucu HUD'a LIMIT:n veya LIMIT:OFF olarak gönderir. */
@@ -29,11 +35,13 @@ object OsmLimit {
         if (!busy.compareAndSet(false, true)) return
         Thread {
             try {
-                if (!hasCache || meters(loc.latitude, loc.longitude, cLat, cLon) > REFETCH_M) {
+                if ((!hasCache || meters(loc.latitude, loc.longitude, cLat, cLon) > REFETCH_M) &&
+                    System.currentTimeMillis() > failUntil) {
                     try {
                         fetch(loc.latitude, loc.longitude)
                     } catch (e: Exception) {
                         AppLog.add("OSM indirme hatası: ${e.message}")
+                        failUntil = System.currentTimeMillis() + 15_000L
                     }
                 }
                 val v = if (hasCache) lookup(loc) else null
@@ -48,43 +56,61 @@ object OsmLimit {
     }
 
     private fun fetch(lat: Double, lon: Double) {
-        val types = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|" +
+        val types = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|" +
             "motorway_link|trunk_link|primary_link|secondary_link|tertiary_link"
-        val q = "[out:json][timeout:15];way(around:$RADIUS,$lat,$lon)[\"highway\"~\"^($types)\$\"];out tags geom;"
-        val conn = URL("https://overpass-api.de/api/interpreter").openConnection() as HttpURLConnection
+        val q = "[out:json][timeout:25];way(around:$RADIUS,$lat,$lon)[\"highway\"~\"^($types)\$\"];out tags geom qt;"
+        var lastErr: Exception? = null
+        for (server in SERVERS) {
+            try {
+                val txt = post(server, q)
+                parse(txt, lat, lon)
+                return
+            } catch (e: Exception) {
+                lastErr = e
+                AppLog.add("OSM sunucu cevap vermedi: ${server.substringAfter("//").substringBefore("/")} (${e.message})")
+            }
+        }
+        throw lastErr ?: Exception("bilinmeyen hata")
+    }
+
+    private fun post(server: String, q: String): String {
+        val conn = URL(server).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.doOutput = true
-            conn.connectTimeout = 10000
-            conn.readTimeout = 20000
+            conn.connectTimeout = 8000
+            conn.readTimeout = 15000
             conn.setRequestProperty("User-Agent", "HUDBridge/1.0 (personal hobby project)")
             conn.outputStream.use { it.write(("data=" + URLEncoder.encode(q, "UTF-8")).toByteArray()) }
             if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
-            val txt = conn.inputStream.bufferedReader().use { it.readText() }
-            val arr = JSONObject(txt).getJSONArray("elements")
-            val list = ArrayList<Way>()
-            for (i in 0 until arr.length()) {
-                val e = arr.getJSONObject(i)
-                val g = e.optJSONArray("geometry") ?: continue
-                if (g.length() < 2) continue
-                val la = DoubleArray(g.length())
-                val lo = DoubleArray(g.length())
-                for (j in 0 until g.length()) {
-                    val p = g.getJSONObject(j)
-                    la[j] = p.getDouble("lat")
-                    lo[j] = p.getDouble("lon")
-                }
-                val tags = e.optJSONObject("tags")
-                list.add(Way(parseLimit(tags?.optString("maxspeed", "") ?: ""), la, lo))
-            }
-            ways = list
-            cLat = lat
-            cLon = lon
-            hasCache = true
-            AppLog.add("OSM: ${list.size} yol indirildi")
+            return conn.inputStream.bufferedReader().use { it.readText() }
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun parse(txt: String, lat: Double, lon: Double) {
+        val arr = JSONObject(txt).getJSONArray("elements")
+        val list = ArrayList<Way>()
+        for (i in 0 until arr.length()) {
+            val e = arr.getJSONObject(i)
+            val g = e.optJSONArray("geometry") ?: continue
+            if (g.length() < 2) continue
+            val la = DoubleArray(g.length())
+            val lo = DoubleArray(g.length())
+            for (j in 0 until g.length()) {
+                val p = g.getJSONObject(j)
+                la[j] = p.getDouble("lat")
+                lo[j] = p.getDouble("lon")
+            }
+            val tags = e.optJSONObject("tags")
+            list.add(Way(parseLimit(tags?.optString("maxspeed", "") ?: ""), la, lo))
+        }
+        ways = list
+        cLat = lat
+        cLon = lon
+        hasCache = true
+        AppLog.add("OSM: ${list.size} yol indirildi")
     }
 
     private fun parseLimit(s: String): Int? {

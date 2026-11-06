@@ -10,6 +10,9 @@ class NavListener : NotificationListenerService() {
 
     private val distRe = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*(km|m|ft|mi|yd)\b""", RegexOption.IGNORE_CASE)
     private val exitRe = Regex("""(\d+)\s*\.\s*çıkış|(\d+)(?:st|nd|rd|th)\s+exit|(\d+)\.\s*Ausfahrt""", RegexOption.IGNORE_CASE)
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val clearWarn = Runnable { HudBle.setState("UYARI", "UYARI:YOK") }
+    private val warnDistRe = Regex("""(\d+(?:[.,]\d+)?)\s*(km|kilomet\w*|meters?|metres?|m|metre)\b""", RegexOption.IGNORE_CASE)
     private var lastMapsKey = ""
     private var lastOtherKey = HashMap<String, String>()
 
@@ -31,6 +34,13 @@ class NavListener : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (sbn.packageName?.contains("saphe", true) == true) {
+            lastOtherKey.remove(sbn.packageName)
+            if (sbn.notification.channelId == "alarmNotificationChannel") {
+                handler.removeCallbacks(clearWarn)
+                HudBle.setState("UYARI", "UYARI:YOK")
+            }
+        }
         if (sbn.packageName == MAPS && sbn.notification.category == Notification.CATEGORY_NAVIGATION) {
             lastMapsKey = ""
             HudBle.clearAll()
@@ -119,12 +129,37 @@ class NavListener : NotificationListenerService() {
         lastOtherKey[pkg] = s
         AppLog.record(s)
         AppLog.add("Saphe bildirimi kaydedildi")
+        handleSaphe(n.channelId, ex)
         for ((kind, icon) in listOf("sbig" to n.getLargeIcon(), "ssmall" to n.smallIcon)) {
             if (icon == null) continue
             val d = icon.loadDrawable(applicationContext) ?: continue
             val bmp = ArrowMatcher.drawableToBitmap(d, 84)
             AppLog.saveIcon(bmp, "${kind}_${ArrowMatcher.hash(ArrowMatcher.mask(bmp))}")
         }
+    }
+
+    /** Saphe uyarı bildirimi -> HUD uyarı grafiği. Radar/kamera uyarıları ayarda kapalıysa HUD'a gitmez. */
+    private fun handleSaphe(channel: String?, ex: Bundle) {
+        if (channel != "alarmNotificationChannel") return
+        val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: return
+        val t = title.lowercase()
+        if (t.contains("speed limit")) return
+        val type = when {
+            Regex("camera|blitzer|radar|speed trap|kamera").containsMatchIn(t) -> "CAM"
+            Regex("accident|crash|unfall|kaza").containsMatchIn(t) -> "CRASH"
+            Regex("animal|wildlife|tier|hayvan").containsMatchIn(t) -> "ANIMAL"
+            Regex("stationary|broken|breakdown|panne|stehend").containsMatchIn(t) -> "CARSHOLD"
+            else -> "WARN"
+        }
+        val dm = warnDistRe.find(t)
+        if (dm != null) {
+            val unit = if (dm.groupValues[2].startsWith("k")) "km" else "m"
+            HudBle.setState("RMESAFE", "RMESAFE:${dm.groupValues[1]}$unit")
+        }
+        HudBle.setState("UYARI", "UYARI:$type")
+        // Silinme bildirimi gelmezse 30 sn sonra kendiliğinden temizle
+        handler.removeCallbacks(clearWarn)
+        handler.postDelayed(clearWarn, 30_000L)
     }
 
     companion object {

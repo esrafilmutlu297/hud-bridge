@@ -11,12 +11,27 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 
 /** Telefonun GPS hızını okuyup HUD'a gönderir. Ön plan servisi olduğu için arka planda kapanmaz. */
 class HudService : Service(), LocationListener {
 
     private var lm: LocationManager? = null
+    private var lastLoc: Location? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val limitTick = object : Runnable {
+        override fun run() {
+            val l = lastLoc
+            // Konum 15 saniyeden eskiyse sorgulama
+            if (l != null && (SystemClock.elapsedRealtimeNanos() - l.elapsedRealtimeNanos) < 15_000_000_000L) {
+                OsmLimit.update(l)
+            }
+            handler.postDelayed(this, 10_000L)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -49,6 +64,8 @@ class HudService : Service(), LocationListener {
             m.removeUpdates(this)
             m.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
             AppLog.add("GPS hız okuma başladı")
+            handler.removeCallbacks(limitTick)
+            handler.postDelayed(limitTick, 10_000L)
         } catch (e: SecurityException) {
             AppLog.add("Konum izni yok")
         } catch (e: Exception) {
@@ -57,6 +74,7 @@ class HudService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(loc: Location) {
+        lastLoc = loc
         if (!loc.hasSpeed()) return
         val kmh = Math.round(loc.speed * 3.6f)
         val v = if (kmh < 2) 0 else kmh
@@ -69,6 +87,7 @@ class HudService : Service(), LocationListener {
     override fun onProviderDisabled(provider: String) {}
 
     override fun onDestroy() {
+        handler.removeCallbacks(limitTick)
         try { lm?.removeUpdates(this) } catch (_: Exception) {}
         super.onDestroy()
     }

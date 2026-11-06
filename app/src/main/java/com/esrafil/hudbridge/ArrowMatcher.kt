@@ -26,7 +26,9 @@ object ArrowMatcher {
         val names = ctx.assets.list("arrows") ?: emptyArray()
         for (name in names) {
             if (!name.endsWith(".png", true)) continue
-            val label = name.substringBefore('_').substringBefore('.').uppercase()
+            val base = name.substringBefore('_').substringBefore('.').uppercase()
+            // KAVSAK_2.png -> KAVSAK2 (dosyadaki sıra numarası çıkış numarasıdır)
+            val label = if (base == "KAVSAK") "KAVSAK" + name.substringAfter('_').substringBefore('.') else base
             val bmp = ctx.assets.open("arrows/$name").use { BitmapFactory.decodeStream(it) } ?: continue
             list.add(Tpl(label, mask(bmp)))
         }

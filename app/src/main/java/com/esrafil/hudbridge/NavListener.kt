@@ -87,11 +87,11 @@ class NavListener : NotificationListenerService() {
             }
             HudBle.setState("MESAFE", "MESAFE:${dm.groupValues[1]}$unit")
         }
-        // Kavşak: çıkış numarasını Maps'in yazısından al ("3. çıkışa girin"), yoksa 2 varsay
+        // Kavşak: yazıda çıkış numarası varsa onu kullan ("3. çıkışa girin"), yoksa ikonun şablonu
         var yon = label
-        if (label == "KAVSAK" || exitRe.containsMatchIn(text)) {
-            val m = exitRe.find(text)
-            val n = m?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 2
+        val em = exitRe.find(text)
+        if (em != null) {
+            val n = em.groupValues.drop(1).firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 2
             yon = "KAVSAK${n.coerceIn(1, 4)}"
         }
         if (meters > FAR_METERS) {

@@ -1,1 +1,2 @@
-Ok sablonlari: dosya adi YON_sira.png (ornek SAG_1.png)
+Maps'ten kaydedilen gerçek ikonlar. Dosya adı: ETIKET_sira.png
+SAG, SOL, DUZ, SAGCATAL, SOLCATAL, KAVSAK (numarayi Maps yazisindan okunur)

@@ -9,6 +9,7 @@ import android.service.notification.StatusBarNotification
 class NavListener : NotificationListenerService() {
 
     private val distRe = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*(km|m|ft|mi|yd)\b""", RegexOption.IGNORE_CASE)
+    private val exitRe = Regex("""(\d+)\s*\.\s*çıkış|(\d+)(?:st|nd|rd|th)\s+exit|(\d+)\.\s*Ausfahrt""", RegexOption.IGNORE_CASE)
     private var lastMapsKey = ""
     private var lastOtherKey = HashMap<String, String>()
 
@@ -86,10 +87,17 @@ class NavListener : NotificationListenerService() {
             }
             HudBle.setState("MESAFE", "MESAFE:${dm.groupValues[1]}$unit")
         }
+        // Kavşak: çıkış numarasını Maps'in yazısından al ("3. çıkışa girin"), yoksa 2 varsay
+        var yon = label
+        if (label == "KAVSAK" || exitRe.containsMatchIn(text)) {
+            val m = exitRe.find(text)
+            val n = m?.groupValues?.drop(1)?.firstOrNull { it.isNotEmpty() }?.toIntOrNull() ?: 2
+            yon = "KAVSAK${n.coerceIn(1, 4)}"
+        }
         if (meters > FAR_METERS) {
             HudBle.setState("YON", "YON:DUZ")
-        } else if (label != null) {
-            HudBle.setState("YON", "YON:$label")
+        } else if (yon != null) {
+            HudBle.setState("YON", "YON:$yon")
         }
     }
 

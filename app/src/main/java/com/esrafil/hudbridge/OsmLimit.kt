@@ -20,14 +20,17 @@ object OsmLimit {
     @Volatile private var hasCache = false
     private var cLat = 0.0
     private var cLon = 0.0
-    private const val RADIUS = 600
+    private const val HALF_DEG = 0.0045 // yaklaşık 500 m
     private const val REFETCH_M = 250.0
     private val SERVERS = listOf(
         "https://overpass-api.de/api/interpreter",
         "https://overpass.kumi.systems/api/interpreter",
-        "https://overpass.private.coffee/api/interpreter"
+        "https://overpass.private.coffee/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        "https://overpass.openstreetmap.fr/api/interpreter"
     )
     @Volatile private var failUntil = 0L
+    @Volatile private var t0 = 0L
     private val busy = AtomicBoolean(false)
 
     /** Arka planda çalışır; sonucu HUD'a LIMIT:n veya LIMIT:OFF olarak gönderir. */
@@ -56,9 +59,14 @@ object OsmLimit {
     }
 
     private fun fetch(lat: Double, lon: Double) {
+        t0 = System.currentTimeMillis()
         val types = "motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|" +
             "motorway_link|trunk_link|primary_link|secondary_link|tertiary_link"
-        val q = "[out:json][timeout:25];way(around:$RADIUS,$lat,$lon)[\"highway\"~\"^($types)\$\"];out tags geom qt;"
+        val dLat = HALF_DEG
+        val dLon = HALF_DEG / Math.cos(Math.toRadians(lat))
+        val bbox = "${lat - dLat},${lon - dLon},${lat + dLat},${lon + dLon}"
+        // Kutu (bbox) sorgusu, "around" sorgusundan çok daha hafif ve hızlı
+        val q = "[out:json][timeout:20][bbox:$bbox];way[\"highway\"~\"^($types)\$\"];out tags geom qt;"
         var lastErr: Exception? = null
         for (server in SERVERS) {
             try {
@@ -79,7 +87,7 @@ object OsmLimit {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.connectTimeout = 8000
-            conn.readTimeout = 15000
+            conn.readTimeout = 18000
             conn.setRequestProperty("User-Agent", "HUDBridge/1.0 (personal hobby project)")
             conn.outputStream.use { it.write(("data=" + URLEncoder.encode(q, "UTF-8")).toByteArray()) }
             if (conn.responseCode != 200) throw Exception("HTTP ${conn.responseCode}")
@@ -110,7 +118,7 @@ object OsmLimit {
         cLat = lat
         cLon = lon
         hasCache = true
-        AppLog.add("OSM: ${list.size} yol indirildi")
+        AppLog.add("OSM: ${list.size} yol indirildi (${(System.currentTimeMillis() - t0) / 1000.0} sn)")
     }
 
     private fun parseLimit(s: String): Int? {

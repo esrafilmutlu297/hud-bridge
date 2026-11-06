@@ -74,17 +74,15 @@ class MainActivity : Activity() {
         })
         root.addView(button("Test: ekranı temizle") { HudBle.sendNow("TEMIZLE") })
 
-        scroll = ScrollView(this)
         logView = TextView(this)
         logView.textSize = 12f
         logView.typeface = android.graphics.Typeface.MONOSPACE
-        scroll.addView(logView)
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        lp.topMargin = dp(8)
-        scroll.layoutParams = lp
-        root.addView(scroll)
+        logView.setPadding(0, dp(12), 0, dp(24))
+        root.addView(logView)
 
-        setContentView(root)
+        scroll = ScrollView(this)
+        scroll.addView(root)
+        setContentView(scroll)
     }
 
     override fun onResume() {
@@ -106,7 +104,6 @@ class MainActivity : Activity() {
         statusView.text = "HUD: ${HudBle.status}\nBildirim erişimi: ${if (accessOn) "açık" else "KAPALI"}\n" +
             "Ok şablonu sayısı: ${ArrowMatcher.templateCount()}"
         logView.text = AppLog.text()
-        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     private fun askLocation() {

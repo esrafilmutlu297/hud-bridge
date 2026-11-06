@@ -21,12 +21,15 @@ class HudService : Service(), LocationListener {
 
     private var lm: LocationManager? = null
     private var lastLoc: Location? = null
+    private val prevByProvider = HashMap<String, Location>()
+    private var lastGpsAt = 0L
+    private var lastLocAt = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val limitTick = object : Runnable {
         override fun run() {
             val l = lastLoc
             // Konum 15 saniyeden eskiyse sorgulama
-            if (l != null && (SystemClock.elapsedRealtimeNanos() - l.elapsedRealtimeNanos) < 15_000_000_000L) {
+            if (l != null && (SystemClock.elapsedRealtime() - lastLocAt) < 15_000L) {
                 OsmLimit.update(l)
             }
             handler.postDelayed(this, 10_000L)
@@ -62,8 +65,24 @@ class HudService : Service(), LocationListener {
         lm = m
         try {
             m.removeUpdates(this)
-            m.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, this)
-            AppLog.add("GPS hız okuma başladı")
+            val provs = ArrayList<String>()
+            provs.add(LocationManager.GPS_PROVIDER)
+            provs.add(LocationManager.NETWORK_PROVIDER)
+            if (Build.VERSION.SDK_INT >= 31) provs.add(LocationManager.FUSED_PROVIDER)
+            val all = m.allProviders
+            var n = 0
+            for (p in provs) {
+                if (!all.contains(p)) continue
+                try {
+                    m.requestLocationUpdates(p, 1000L, 0f, this)
+                    n++
+                } catch (e: SecurityException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLog.add("Konum kaynağı hatası ($p): ${e.message}")
+                }
+            }
+            AppLog.add("Konum okuma başladı, kaynak sayısı: $n")
             handler.removeCallbacks(limitTick)
             handler.postDelayed(limitTick, 10_000L)
         } catch (e: SecurityException) {
@@ -74,9 +93,23 @@ class HudService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(loc: Location) {
+        val prov = loc.provider ?: ""
+        val now = SystemClock.elapsedRealtime()
+        // GPS varsa onu tercih et; ağ/fused (ve sahte konum) sadece GPS 5 sn sessizse kullanılır
+        if (prov == LocationManager.GPS_PROVIDER) lastGpsAt = now
+        else if (now - lastGpsAt < 5000L) return
         lastLoc = loc
-        if (!loc.hasSpeed()) return
-        val kmh = Math.round(loc.speed * 3.6f)
+        lastLocAt = now
+
+        var speed = if (loc.hasSpeed()) loc.speed else -1f
+        val prev = prevByProvider[prov]
+        if (speed < 0f && prev != null) {
+            val dt = (loc.time - prev.time) / 1000f
+            if (dt > 0.5f && dt < 10f) speed = prev.distanceTo(loc) / dt
+        }
+        prevByProvider[prov] = loc
+        if (speed < 0f) return
+        val kmh = Math.round(speed * 3.6f)
         val v = if (kmh < 2) 0 else kmh
         HudBle.setState("HIZ", "HIZ:$v")
     }

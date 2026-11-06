@@ -23,10 +23,22 @@ object AppLog {
 
     fun add(s: String) {
         val line = fmt.format(Date()) + "  " + s
+        writeUi(line)
         main.post {
             lines.addLast(line)
             while (lines.size > 60) lines.removeFirst()
             listener?.invoke()
+        }
+    }
+
+    @Synchronized
+    private fun writeUi(line: String) {
+        val d = dir ?: return
+        try {
+            val f = File(d, "uilog.txt")
+            if (f.length() > 1_000_000) f.delete()
+            f.appendText(line + "\n")
+        } catch (_: Exception) {
         }
     }
 
